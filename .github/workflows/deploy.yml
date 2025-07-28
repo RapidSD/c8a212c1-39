@@ -1,0 +1,69 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Cloudflare Workers
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+        if: true
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Create .env file from GitHub variables and secrets
+        run: |
+          echo "🔧 Setting up environment variables..."
+          echo "NEXT_PUBLIC_SHOPIFY_SHOP=${{ vars.SHOPIFY_SHOP }}" >> .env
+          echo "NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN=${{ secrets.SHOPIFY_STOREFRONT_ACCESS_TOKEN }}" >> .env
+          echo "PRIVATE_SHOPIFY_STOREFRONT_ACCESS_TOKEN=${{ secrets.PRIVATE_SHOPIFY_STOREFRONT_ACCESS_TOKEN }}" >> .env
+          echo ""
+          echo "📋 Environment variables configured:"
+          echo "NEXT_PUBLIC_SHOPIFY_SHOP=${{ vars.SHOPIFY_SHOP || 'NOT_SET' }}"
+          echo "NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN=$(echo '${{ secrets.SHOPIFY_STOREFRONT_ACCESS_TOKEN }}' | sed 's/./*/g' | cut -c1-10)..."
+          echo "PRIVATE_SHOPIFY_STOREFRONT_ACCESS_TOKEN=$(echo '${{ secrets.PRIVATE_SHOPIFY_STOREFRONT_ACCESS_TOKEN }}' | sed 's/./*/g' | cut -c1-10)..."
+          echo ""
+          echo "📄 Final .env file contents:"
+          cat .env | sed 's/SHOPIFY_STOREFRONT_ACCESS_TOKEN=.*/SHOPIFY_STOREFRONT_ACCESS_TOKEN=[HIDDEN]/g'
+
+      - name: Build project
+        run: |
+          # For Next.js projects without env vars, create dummy env file
+          if [ ! -f .env ] && [ -f next.config.js ]; then
+            echo "⚠️ No .env file found - building with dummy values"
+            echo "NEXT_PUBLIC_SHOPIFY_SHOP=demo.myshopify.com" >> .env
+            echo "NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN=dummy-token" >> .env
+          fi
+          pnpm run build
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          workingDirectory: .
+          
+      - name: Post deployment info
+        run: |
+          echo "🚀 Deployment completed!"
+          echo "📝 Your app should be available at: https://c8a212c1-39.workers.dev"
+          echo "🛍️ Shopify credentials are loaded from the project's .env file"
+          echo "☁️ GitHub and Cloudflare managed by deployment infrastructure"
